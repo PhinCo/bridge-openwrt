@@ -1672,6 +1672,7 @@ zyx_nbg6716_mtdlayout=mtdparts=spi0.0:256k(u-boot)ro,64k(env)ro,64k(RFdata)ro,-(
 qihoo_c301_mtdlayout=mtdparts=spi0.0:256k(u-boot)ro,64k(u-boot-env),64k(devdata),64k(devconf),15744k(firmware),64k(warm_start),64k(action_image_config),64k(radiocfg)ro;spi0.1:15360k(upgrade2),1024k(privatedata)
 yun_mtdlayout_8M=mtdparts=spi0.0:256k(u-boot)ro,64k(u-boot-env)ro,6464k(rootfs),1280k(kernel),64k(nvram),64k(art),7744k@0x50000(firmware)
 yun_mtdlayout_16M=mtdparts=spi0.0:256k(u-boot)ro,64k(u-boot-env)ro,14656k(rootfs),1280k(kernel),64k(nvram),64k(art),15936k@0x50000(firmware)
+redbridge_mtdlayout=mtdparts=spi0.0:256k(u-boot),64k(u-boot-env),2048k(kernel),13952k(rootfs),64k(art),16000k@0x50000(firmware)
 
 
 define Image/BuildKernel
@@ -2545,6 +2546,8 @@ $(eval $(call SingleProfile,Zcomax,64k,ZCN1523H28,zcn-1523h-2-8,ZCN-1523H-2,ttyS
 $(eval $(call SingleProfile,Zcomax,64k,ZCN1523H516,zcn-1523h-5-16,ZCN-1523H-5,ttyS0,115200,$$(zcn1523h_mtdlayout)))
 
 $(eval $(call SingleProfile,ZyXEL,64k,NBG_460N_550N_550NH,nbg460n_550n_550nh,NBG460N,ttyS0,115200,NBG-460N))
+
+$(eval $(call SingleProfile,AthLzma,64k,REDBRIDGE,REDBRIDGE,REDBRIDGE,ttyUSB0,115200,$$(redbridge_mtdlayout),KRuImage))
 
 $(eval $(call MultiProfile,AP121,AP121_2M AP121_4M AP121_8M AP121_16M))
 $(eval $(call MultiProfile,AP136,AP136_010 AP136_020))

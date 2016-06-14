@@ -1,0 +1,255 @@
+--- a/arch/mips/ath79/Makefile
++++ b/arch/mips/ath79/Makefile
+@@ -127,6 +127,7 @@ obj-$(CONFIG_ATH79_MACH_RB91X)		+= mach-
+ obj-$(CONFIG_ATH79_MACH_RB922)		+= mach-rb922.o
+ obj-$(CONFIG_ATH79_MACH_RB95X)		+= mach-rb95x.o
+ obj-$(CONFIG_ATH79_MACH_RB2011)		+= mach-rb2011.o
++obj-$(CONFIG_ATH79_MACH_REDBRIDGE)	+= mach-redbridge.o
+ obj-$(CONFIG_ATH79_MACH_RBSXTLITE)	+= mach-rbsxtlite.o
+ obj-$(CONFIG_ATH79_MACH_RW2458N)	+= mach-rw2458n.o
+ obj-$(CONFIG_ATH79_MACH_SMART_300)	+= mach-smart-300.o
+--- /dev/null
++++ b/arch/mips/ath79/mach-redbridge.c
+@@ -0,0 +1,216 @@
++/*
++ * Atheros REDBRIDGE reference board support
++ *
++ * Copyright (c) 2015 The Linux Foundation. All rights reserved.
++ * Copyright (c) 2012 Gabor Juhos <juhosg@openwrt.org>
++ *
++ * Permission to use, copy, modify, and/or distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ */
++
++#include <linux/platform_device.h>
++#include <linux/ath9k_platform.h>
++#include <linux/ar8216_platform.h>
++#include <asm/mach-ath79/ar71xx_regs.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/partitions.h>
++#include <linux/i2c.h>
++#include <linux/i2c-gpio.h>
++#include <linux/platform_device.h>
++
++#include <linux/gpio.h>
++#include "common.h"
++#include "dev-eth.h"
++#include "dev-gpio-buttons.h"
++#include "dev-leds-gpio.h"
++#include "dev-m25p80.h"
++#include "dev-spi.h"
++#include "dev-usb.h"
++#include "dev-wmac.h"
++#include "machtypes.h"
++
++#define REDBRIDGE_GPIO_BT3V3_EN         0
++#define REDBRIDGE_GPIO_BT_EN_RST        1
++#define REDBRIDGE_GPIO_BTN_RESET	2
++#define REDBRIDGE_GPIO_LED_ETH		4
++#define REDBRIDGE_GPIO_SPI_CS0		5
++#define REDBRIDGE_GPIO_SPI_CS1		11
++#define REDBRIDGE_GPIO_BTN_WPS		12
++#define REDBRIDGE_GPIO_I2C_SCL		16
++#define REDBRIDGE_GPIO_I2C_SDA		17
++
++#define REDBRIDGE_KEYS_POLL_INTERVAL	20
++#define REDBRIDGE_KEYS_DEBOUNCE_INTERVAL	(3 * REDBRIDGE_KEYS_POLL_INTERVAL)
++
++#define REDBRIDGE_MAC0_OFFSET		0
++#define REDBRIDGE_MAC1_OFFSET		6
++#define REDBRIDGE_WMAC_CALDATA_OFFSET	0x1000
++
++static struct i2c_gpio_platform_data ath79_i2c_gpio_data = {
++	.sda_pin = REDBRIDGE_GPIO_I2C_SDA,
++	.scl_pin = REDBRIDGE_GPIO_I2C_SCL,
++};
++
++static struct gpio_led redbridge_leds_gpio[] __initdata = {
++	{
++		.name		= "bt3v3_en",
++		.gpio		= REDBRIDGE_GPIO_BT3V3_EN,
++		.active_low	= 0,
++	},
++	{
++		.name		= "bt_en_rst",
++		.gpio		= REDBRIDGE_GPIO_BT_EN_RST,
++		.active_low	= 1,
++	},
++};
++
++static struct gpio_keys_button redbridge_gpio_keys[] __initdata = {
++	{
++		.desc		= "WPS button",
++		.type		= EV_KEY,
++		.code		= KEY_WPS_BUTTON,
++		.debounce_interval = REDBRIDGE_KEYS_DEBOUNCE_INTERVAL,
++		.gpio		= REDBRIDGE_GPIO_BTN_WPS,
++		.active_low	= 1,
++	},
++        /*
++	{
++		.desc		= "reset button",
++		.type		= EV_KEY,
++		.code		= KEY_RESTART,
++		.debounce_interval = REDBRIDGE_KEYS_DEBOUNCE_INTERVAL,
++		.gpio		= REDBRIDGE_GPIO_BTN_RESET,
++		.active_low	= 1,
++	},
++        */
++
++};
++
++static void __init redbridge_gpio_led_setup(void)
++{
++	// disable JTAG
++	ath79_gpio_function_enable(AR934X_GPIO_FUNC_JTAG_DISABLE);
++
++	/* eth0 LED */
++	ath79_gpio_direction_select(REDBRIDGE_GPIO_LED_ETH, true);
++	ath79_gpio_output_select(REDBRIDGE_GPIO_LED_ETH,
++			QCA953X_GPIO_OUT_MUX_LED_LINK5);
++
++	ath79_register_leds_gpio(-1,
++				 ARRAY_SIZE(redbridge_leds_gpio),
++				 redbridge_leds_gpio);
++
++	ath79_register_gpio_keys_polled(-1, REDBRIDGE_KEYS_POLL_INTERVAL,
++					ARRAY_SIZE(redbridge_gpio_keys),
++					redbridge_gpio_keys);
++}
++
++/*
++static struct ath79_spi_controller_data redbridge_spi0_cdata =
++{
++	.cs_type	= ATH79_SPI_CS_TYPE_INTERNAL,
++	.is_flash	= true,
++	.cs_line	= 0,
++};
++
++static struct ath79_spi_controller_data redbridge_spi1_cdata =
++{
++	.cs_type	= ATH79_SPI_CS_TYPE_INTERNAL,
++	.is_flash	= true,
++	.cs_line	= 1,
++};
++
++static struct spi_board_info redbridge_spi_info[] = {
++	{
++		.bus_num	= 0,
++		.chip_select	= 0,
++		.max_speed_hz	= 25000000,
++		.modalias	= "m25p80",
++		.controller_data = &redbridge_spi0_cdata,
++		.platform_data 	= NULL,
++	},
++	{
++		.bus_num	= 0,
++		.chip_select	= 1,
++		.max_speed_hz   = 25000000,
++		.modalias	= "ath79-spinand",
++		.controller_data = &redbridge_spi1_cdata,
++		.platform_data 	= NULL,
++	}
++};
++
++static struct ath79_spi_platform_data redbridge_spi_data = {
++	.bus_num		= 0,
++	.num_chipselect		= 2,
++};
++*/
++
++static struct platform_device ath79_i2c_gpio_device = {
++	.name		= "i2c-gpio",
++	.id		= 0,
++};
++static void __init redbridge_register_i2c_devices(
++		struct i2c_board_info const *info)
++{
++	ath79_gpio_output_select(REDBRIDGE_GPIO_I2C_SDA, AR934X_GPIO_OUT_GPIO);
++	ath79_gpio_output_select(REDBRIDGE_GPIO_I2C_SCL, AR934X_GPIO_OUT_GPIO);
++
++	//ath79_register_i2c(&ath79_i2c_gpio_data, info, info ? 1 : 0);
++
++	i2c_register_board_info(0, info, info ? 1 : 0);
++	ath79_i2c_gpio_device.dev.platform_data = &ath79_i2c_gpio_data;
++	platform_device_register(&ath79_i2c_gpio_device);
++}
++
++static void __init redbridge_common_setup(void)
++{
++	u8 *art = (u8 *) KSEG1ADDR(0x1fff0000);
++
++	redbridge_gpio_led_setup();
++
++	ath79_register_usb();
++
++	ath79_register_wmac(art + REDBRIDGE_WMAC_CALDATA_OFFSET, NULL);
++
++	ath79_register_mdio(0, 0x0);
++	ath79_register_mdio(1, 0x0);
++
++	ath79_init_mac(ath79_eth0_data.mac_addr, art + REDBRIDGE_MAC0_OFFSET, 0);
++	ath79_init_mac(ath79_eth1_data.mac_addr, art + REDBRIDGE_MAC1_OFFSET, 0);
++
++	/* WAN port */
++	ath79_eth0_data.phy_if_mode = PHY_INTERFACE_MODE_MII;
++	ath79_eth0_data.speed = SPEED_100;
++	ath79_eth0_data.duplex = DUPLEX_FULL;
++	ath79_eth0_data.phy_mask = BIT(4);
++	ath79_register_eth(0);
++
++	/* LAN ports */
++	ath79_eth1_data.phy_if_mode = PHY_INTERFACE_MODE_GMII;
++	ath79_eth1_data.speed = SPEED_1000;
++	ath79_eth1_data.duplex = DUPLEX_FULL;
++	ath79_switch_data.phy_poll_mask |= BIT(4);
++	ath79_switch_data.phy4_mii_en = 1;
++	ath79_register_eth(1);
++
++	/* GPIO based S/W I2C master device */
++	redbridge_register_i2c_devices(NULL);
++}
++
++static void __init redbridge_setup(void)
++{
++	ath79_register_m25p80(NULL);
++	redbridge_common_setup();
++}
++
++MIPS_MACHINE(ATH79_MACH_REDBRIDGE, "REDBRIDGE", "Playground Redbridge", redbridge_setup);
+--- a/arch/mips/ath79/machtypes.h
++++ b/arch/mips/ath79/machtypes.h
+@@ -142,6 +142,7 @@ enum ath79_mach_type {
+ 	ATH79_MACH_RB_2011R5,		/* Mikrotik RouterBOARD 2011UiAS(-2Hnd) */
+ 	ATH79_MACH_RB_SXTLITE2ND,	/* Mikrotik RouterBOARD SXT Lite 2nD */
+ 	ATH79_MACH_RB_SXTLITE5ND,	/* Mikrotik RouterBOARD SXT Lite 5nD */
++	ATH79_MACH_REDBRIDGE,	/* Playground Redbridge */
+ 	ATH79_MACH_RW2458N,		/* Redwave RW2458N */
+ 	ATH79_MACH_SMART_300,		/* NC-LINK SMART-300 */
+ 	ATH79_MACH_TEW_632BRP,		/* TRENDnet TEW-632BRP */
+--- a/arch/mips/ath79/Kconfig.openwrt
++++ b/arch/mips/ath79/Kconfig.openwrt
+@@ -1475,3 +1475,13 @@ config ATH79_MACH_QIHOO_C301
+ 	select ATH79_DEV_WMAC
+ 	select ATH79_DEV_USB
+ 	select ATH79_NVRAM
++
++ config ATH79_MACH_REDBRIDGE
++        bool "Playground Redbridge support"
++        select SOC_AR933X
++        select ATH79_DEV_ETH
++        select ATH79_DEV_GPIO_BUTTONS
++        select ATH79_DEV_LEDS_GPIO
++        select ATH79_DEV_M25P80
++        select ATH79_DEV_USB
++        select ATH79_DEV_WMAC
